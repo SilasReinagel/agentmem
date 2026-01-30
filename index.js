@@ -13,10 +13,6 @@ const { values, positionals } = parseArgs({
     types: { type: 'string' },
     since: { type: 'string' },
     target: { type: 'string' },
-    action: { type: 'string' },
-    period: { type: 'string' },
-    lessonIds: { type: 'string' },
-    principleName: { type: 'string' },
     help: { type: 'boolean', short: 'h' }
   },
   allowPositionals: true
@@ -135,14 +131,6 @@ try {
       break;
     }
       
-    case 'rollup': {
-      if (!values.action) {
-        throw new Error('Usage: agentmem rollup --user=<user> --action=<action> [--period=<period>] [--lessonIds=<comma-separated>] [--principleName=<name>]');
-      }
-      result = { message: 'Rollup not yet implemented' };
-      break;
-    }
-      
     case 'help':
     case '--help':
     case '-h':
@@ -175,7 +163,6 @@ Commands:
   recall --type=<type>         Recall memories with filters
   search --query="<query>"     Full-text search
   export --target=<dir>        Export to markdown files
-  rollup --action=<action>     Generate summaries or consolidate lessons
 
 Options:
   -u, --user <id>             Agent/user ID (required)
@@ -186,10 +173,6 @@ Options:
   --types <list>              Comma-separated types for search/export
   --since <iso-date>          Filter by date
   --target <dir>              Export target directory
-  --action <action>           Rollup action (weekly_summary, consolidate_lessons)
-  --period <period>           Period for rollup (e.g., 2026-W04)
-  --lessonIds <list>          Comma-separated lesson IDs
-  --principleName <name>      Principle name for consolidation
 
 Examples:
   agentmem session --user=myagent
@@ -202,5 +185,7 @@ Examples:
 
 Environment:
   AGENTMEM_DB_PATH    Custom database path (default: ~/.agentmem/memory.db)
+
+See README.md for Agent Integration patterns (summaries, lesson consolidation).
 `);
 }

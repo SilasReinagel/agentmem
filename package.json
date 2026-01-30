@@ -1,6 +1,6 @@
 {
   "name": "agentmem",
-  "version": "1.0.0",
+  "version": "0.1.0",
   "description": "CLI memory system for AI agents. SQLite + FTS5. Hot/warm/cold event tiers, entities, lessons, principles.",
   "type": "module",
   "main": "index.js",
