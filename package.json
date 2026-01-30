@@ -1,0 +1,39 @@
+{
+  "name": "agentmem",
+  "version": "1.0.0",
+  "description": "CLI memory system for AI agents. SQLite + FTS5. Hot/warm/cold event tiers, entities, lessons, principles.",
+  "type": "module",
+  "main": "index.js",
+  "bin": {
+    "agentmem": "./index.js"
+  },
+  "scripts": {
+    "start": "bun index.js",
+    "test": "AGENTMEM_DB_PATH=:memory: bun test",
+    "test:watch": "AGENTMEM_DB_PATH=:memory: bun test --watch",
+    "test:coverage": "AGENTMEM_DB_PATH=:memory: bun test --coverage"
+  },
+  "keywords": [
+    "ai",
+    "agent",
+    "memory",
+    "llm",
+    "sqlite",
+    "fts5",
+    "cli",
+    "bun"
+  ],
+  "author": "Silas Reinagel <silas@silasreinagel.com>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/SilasReinagel/agentmem.git"
+  },
+  "bugs": {
+    "url": "https://github.com/SilasReinagel/agentmem/issues"
+  },
+  "homepage": "https://github.com/SilasReinagel/agentmem#readme",
+  "engines": {
+    "bun": ">=1.0.0"
+  }
+}
