@@ -4,6 +4,8 @@ import { getSession } from '../commands/session.js';
 import { storeEvent, storeLesson, storePrinciple, storeSummary } from '../commands/store.js';
 import { setState } from '../commands/state.js';
 
+const sessionJson = (agentId) => getSession(agentId, { format: 'json' });
+
 describe('session', () => {
   beforeEach(() => {
     resetDb(':memory:');
@@ -15,7 +17,7 @@ describe('session', () => {
 
   describe('getSession', () => {
     test('returns complete session object', () => {
-      const session = getSession('new-agent');
+      const session = sessionJson('new-agent');
       
       expect(session).toHaveProperty('state');
       expect(session).toHaveProperty('hot_events');
@@ -26,7 +28,7 @@ describe('session', () => {
     });
 
     test('creates agent if not exists', () => {
-      getSession('brand-new-agent');
+      sessionJson('brand-new-agent');
       
       const db = getDb();
       const agent = db.query('SELECT * FROM agents WHERE id = ?').get('brand-new-agent');
@@ -35,7 +37,7 @@ describe('session', () => {
     });
 
     test('returns empty state for new agent', () => {
-      const session = getSession('new-agent');
+      const session = sessionJson('new-agent');
       
       expect(session.state.content).toBe('');
       expect(session.state.updated_at).toBeNull();
@@ -43,7 +45,7 @@ describe('session', () => {
 
     test('returns stored state', () => {
       setState('myagent', '## Current Focus\nBuilding tests');
-      const session = getSession('myagent');
+      const session = sessionJson('myagent');
       
       expect(session.state.content).toBe('## Current Focus\nBuilding tests');
       expect(session.state.updated_at).toBeTruthy();
@@ -58,13 +60,13 @@ describe('session', () => {
       const db = getDb();
       db.query("UPDATE events SET tier = 'warm' WHERE id = 'hot-2'").run();
       
-      const session = getSession('myagent');
+      const session = sessionJson('myagent');
       
       expect(session.hot_events.length).toBe(1);
       expect(session.hot_events[0].id).toBe('hot-1');
     });
 
-    test('limits hot events to 20', () => {
+    test('limits hot events to 15', () => {
       // Create 25 hot events
       for (let i = 0; i < 25; i++) {
         storeEvent('myagent', { 
@@ -75,9 +77,94 @@ describe('session', () => {
         });
       }
       
-      const session = getSession('myagent');
+      const session = sessionJson('myagent');
       
-      expect(session.hot_events.length).toBe(20);
+      expect(session.hot_events.length).toBe(15);
+    });
+
+    test('allowlists only work_session, finding, decision', () => {
+      storeEvent('myagent', { id: 'ok-1', type: 'work_session', title: 'WS', content: 'C' });
+      storeEvent('myagent', { id: 'ok-2', type: 'finding', title: 'Finding', content: 'C' });
+      storeEvent('myagent', { id: 'ok-3', type: 'decision', title: 'Decision', content: 'C' });
+      storeEvent('myagent', { id: 'noise-1', type: 'tool_result', title: 'Shell: ls', content: 'C' });
+      storeEvent('myagent', { id: 'noise-2', type: 'error', title: 'Boom', content: 'C' });
+
+      const session = sessionJson('myagent');
+      const ids = session.hot_events.map(e => e.id);
+
+      expect(ids).toContain('ok-1');
+      expect(ids).toContain('ok-2');
+      expect(ids).toContain('ok-3');
+      expect(ids).not.toContain('noise-1');
+      expect(ids).not.toContain('noise-2');
+    });
+
+    test('dedupes identical titles within 24h', () => {
+      storeEvent('myagent', {
+        id: 'older',
+        type: 'work_session',
+        title: 'Task: same prompt...',
+        content: 'C',
+        timestamp: '2026-07-27T08:00:00Z'
+      });
+      storeEvent('myagent', {
+        id: 'newer',
+        type: 'work_session',
+        title: 'Task: same prompt...',
+        content: 'C',
+        timestamp: '2026-07-27T14:00:00Z'
+      });
+
+      const session = sessionJson('myagent');
+      expect(session.hot_events.length).toBe(1);
+      expect(session.hot_events[0].id).toBe('newer');
+    });
+
+    test('prefers curated events over memsyncd auto events when over cap', () => {
+      for (let i = 0; i < 12; i++) {
+        storeEvent('myagent', {
+          id: `curated-${i}`,
+          type: 'finding',
+          title: `Curated ${i}`,
+          content: 'Manual note',
+          timestamp: new Date(Date.UTC(2026, 6, 27, 10, i, 0)).toISOString()
+        });
+      }
+      for (let i = 0; i < 12; i++) {
+        storeEvent('myagent', {
+          id: `auto-${i}`,
+          type: 'work_session',
+          title: `Task: auto ${i}...`,
+          content: 'Prompt',
+          metadata: { source_path: 'a_logs/2026-07-27/abc.jsonl', source_file: 'abc.jsonl' },
+          timestamp: new Date(Date.UTC(2026, 6, 27, 14, i, 0)).toISOString()
+        });
+      }
+
+      const session = sessionJson('myagent');
+      expect(session.hot_events.length).toBe(15);
+      const curatedCount = session.hot_events.filter(e => e.id.startsWith('curated-')).length;
+      const autoCount = session.hot_events.filter(e => e.id.startsWith('auto-')).length;
+      expect(curatedCount).toBe(12);
+      expect(autoCount).toBe(3);
+    });
+
+    test('marks empty state as stale', () => {
+      const session = sessionJson('new-agent');
+      expect(session.state.stale).toBe(true);
+      expect(session.state.age_hours).toBeNull();
+    });
+
+    test('marks fresh state as not stale', () => {
+      setState('myagent', '## Focus\nFresh');
+      const session = sessionJson('myagent');
+      expect(session.state.stale).toBe(false);
+      expect(session.state.age_hours).toBeLessThan(1);
+    });
+
+    test('compact format includes stale warning when state is empty', () => {
+      const text = getSession('new-agent', { format: 'compact' });
+      expect(text).toContain('! STALE STATE (>24h)');
     });
 
     test('orders hot events by timestamp descending', () => {
@@ -85,7 +172,7 @@ describe('session', () => {
       storeEvent('myagent', { id: 'e2', type: 'work_session', title: 'Second', content: 'C', timestamp: '2026-01-29T12:00:00Z' });
       storeEvent('myagent', { id: 'e3', type: 'work_session', title: 'Third', content: 'C', timestamp: '2026-01-29T11:00:00Z' });
       
-      const session = getSession('myagent');
+      const session = sessionJson('myagent');
       
       expect(session.hot_events[0].id).toBe('e2');
       expect(session.hot_events[1].id).toBe('e3');
@@ -97,7 +184,7 @@ describe('session', () => {
       storePrinciple('myagent', { name: 'principle-2', content: 'Second', source_lessons: [] });
       storePrinciple('myagent', { name: 'principle-3', content: 'Third', source_lessons: [] });
       
-      const session = getSession('myagent');
+      const session = sessionJson('myagent');
       
       expect(session.principles.length).toBe(3);
     });
@@ -120,14 +207,14 @@ describe('session', () => {
         VALUES ('s2', 'myagent', 'week', '2026-W02', 'Week 2', 15, ?)
       `).run(newer);
       
-      const session = getSession('myagent');
+      const session = sessionJson('myagent');
       
       expect(session.recent_summary).toBeTruthy();
       expect(session.recent_summary.period).toBe('2026-W02');
     });
 
     test('returns null when no summaries exist', () => {
-      const session = getSession('myagent');
+      const session = sessionJson('myagent');
       
       expect(session.recent_summary).toBeNull();
     });
@@ -137,7 +224,7 @@ describe('session', () => {
       storeLesson('myagent', { id: 'l2', type: 'success', title: 'Lesson 2', content: 'C' });
       storeLesson('myagent', { id: 'l3', type: 'failure', title: 'Lesson 3', content: 'C', consolidated_to: 'principle-1' });
       
-      const session = getSession('myagent');
+      const session = sessionJson('myagent');
       
       // Should only get unconsolidated lessons (l1 and l2)
       expect(session.recent_lessons.length).toBe(2);
@@ -154,7 +241,7 @@ describe('session', () => {
         });
       }
       
-      const session = getSession('myagent');
+      const session = sessionJson('myagent');
       
       expect(session.recent_lessons.length).toBe(10);
     });
@@ -163,7 +250,7 @@ describe('session', () => {
       storeLesson('myagent', { id: 'l1', type: 'feedback', title: 'Old', content: 'C', timestamp: '2026-01-28T10:00:00Z' });
       storeLesson('myagent', { id: 'l2', type: 'success', title: 'New', content: 'C', timestamp: '2026-01-29T10:00:00Z' });
       
-      const session = getSession('myagent');
+      const session = sessionJson('myagent');
       
       expect(session.recent_lessons[0].id).toBe('l2');
       expect(session.recent_lessons[1].id).toBe('l1');
@@ -177,7 +264,7 @@ describe('session', () => {
       storeLesson('myagent', { id: 'l2', type: 'success', title: 'Lesson 2', content: 'C' });
       storeLesson('myagent', { id: 'l3', type: 'failure', title: 'Lesson 3', content: 'C' });
       
-      const session = getSession('myagent');
+      const session = sessionJson('myagent');
       
       expect(session.counts.hot_events).toBe(2);
       expect(session.counts.principles).toBe(1);
@@ -193,7 +280,7 @@ describe('session', () => {
         metadata: { tags: ['test', 'memory'] }
       });
       
-      const session = getSession('myagent');
+      const session = sessionJson('myagent');
       const event = session.hot_events.find(e => e.id === 'e-meta');
       
       expect(event.metadata).toEqual({ tags: ['test', 'memory'] });
@@ -206,7 +293,7 @@ describe('session', () => {
         source_lessons: ['l1', 'l2', 'l3'] 
       });
       
-      const session = getSession('myagent');
+      const session = sessionJson('myagent');
       const principle = session.principles.find(p => p.name === 'p-sources');
       
       expect(principle.source_lessons).toEqual(['l1', 'l2', 'l3']);
@@ -221,7 +308,7 @@ describe('session', () => {
         metadata: { importance: 'high' }
       });
       
-      const session = getSession('myagent');
+      const session = sessionJson('myagent');
       const lesson = session.recent_lessons.find(l => l.id === 'l-meta');
       
       expect(lesson.metadata).toEqual({ importance: 'high' });
@@ -231,8 +318,8 @@ describe('session', () => {
       storeEvent('myagent', { id: 'my-evt', type: 'work_session', title: 'My Event', content: 'C' });
       storeEvent('otheragent', { id: 'other-evt', type: 'work_session', title: 'Other Event', content: 'C' });
       
-      const mySession = getSession('myagent');
-      const otherSession = getSession('otheragent');
+      const mySession = sessionJson('myagent');
+      const otherSession = sessionJson('otheragent');
       
       expect(mySession.hot_events.length).toBe(1);
       expect(mySession.hot_events[0].id).toBe('my-evt');
@@ -242,7 +329,7 @@ describe('session', () => {
     });
 
     test('handles empty database gracefully', () => {
-      const session = getSession('empty-agent');
+      const session = sessionJson('empty-agent');
       
       expect(session.state.content).toBe('');
       expect(session.hot_events).toEqual([]);
