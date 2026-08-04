@@ -28,8 +28,11 @@ agentmem session --user=myagent
 ## Quick Start
 
 ```bash
-# Start a session (returns state, hot events, principles, recent lessons)
+# Start a session (compact text — token-efficient for agent bootstrap)
 agentmem session --user=myagent
+
+# Full JSON output (backward compatible, for scripts)
+agentmem session --user=myagent --format=json
 
 # Store an event
 agentmem store --user=myagent --type=event '{"type":"work_session","title":"Built feature X","content":"Implemented the new dashboard..."}'
@@ -52,12 +55,43 @@ agentmem state --user=myagent
 Get everything needed to start a session in one call.
 
 ```bash
+# Default: compact text (best for agent bootstrap)
 agentmem session --user=myagent
+
+# JSON: full structured output (for scripts or debugging)
+agentmem session --user=myagent --format=json
 ```
 
+**Default output (`compact`)** — scannable text sections:
+
+```
+=STATE (Jul06)=
+## Current Focus
+...
+
+=EVENTS (12)=
+Jul09 10:51 | work_session | Task: Built feature X
+Jul09 10:37 | finding | Done in workspace 1...
+
+=PRINCIPLES (4)=
+- optimize-for-context-switches: Silas works in rapid context-switching mode...
+
+=LESSONS (10)=
+Jul06 | observation | PR 24883 builtin catalog...
+```
+
+**JSON output (`--format=json`)** returns the same data as structured objects with full metadata.
+
+**Session filtering (signal-only bootstrap):**
+- Hot events allowlist: `work_session`, `finding`, `decision` only
+- Noisy types (`tool_result`, `tool_call`, etc.) are excluded — use `recall` or `search` to find those
+- Events with identical (normalized) titles within 24 hours are deduplicated (keeps most recent)
+- Manual/curated events preferred over memsyncd auto-ingest (`source_path` / `Task:` titles) when capping
+- State older than 24h (or empty) shows `! STALE STATE` in compact output; JSON includes `state.stale` / `state.age_hours`
+
 Returns:
-- Current state
-- Hot events (last 72 hours, max 20)
+- Current state (with stale flag)
+- Hot events (last 72 hours, max 15 after filter/dedupe)
 - All principles
 - Most recent summary
 - Recent unconsolidated lessons (max 10)
@@ -263,9 +297,10 @@ agentmem store --user=myagent --type=lesson '{
 Recommended flow for an agent session:
 
 ```bash
-# 1. Session start: get all context in one call
+# 1. Session start: get all context in one call (compact text by default)
 agentmem session --user=myagent
 # Returns: state, hot_events, principles, recent_summary, recent_lessons
+# Use --format=json if a script needs structured output
 
 # 2. During session: store events as they happen
 agentmem store --user=myagent --type=event '{"type":"work_session",...}'

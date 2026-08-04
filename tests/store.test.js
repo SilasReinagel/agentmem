@@ -166,6 +166,34 @@ describe('store', () => {
       expect(seq2).toBe(seq1 + 1);
       expect(seq3).toBe(seq2 + 1);
     });
+
+    test('does not collide after sequence exceeds 999', () => {
+      const date = new Date().toISOString().split('T')[0];
+      storeEvent('myagent', {
+        id: `${date}-999`,
+        type: 'work_session',
+        title: 'Keep me',
+        content: 'original-999'
+      });
+      storeEvent('myagent', {
+        id: `${date}-1000`,
+        type: 'work_session',
+        title: 'Keep me too',
+        content: 'original-1000'
+      });
+
+      const next = storeEvent('myagent', {
+        type: 'work_session',
+        title: 'Next',
+        content: 'should-be-1001'
+      });
+
+      expect(next.id).toBe(`${date}-1001`);
+
+      const db = getDb();
+      expect(db.query('SELECT content FROM events WHERE id = ?').get(`${date}-1000`).content)
+        .toBe('original-1000');
+    });
   });
 
   describe('storeEntity', () => {

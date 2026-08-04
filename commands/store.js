@@ -257,20 +257,22 @@ export function storeSummary(agentId, data) {
 
 function generateId(db, prefix) {
   const date = new Date().toISOString().split('T')[0];
-  
-  // Get max sequence for today
-  const max = db.query(`
-    SELECT id FROM ${prefix === 'event' ? 'events' : 'lessons'}
+  const table = prefix === 'event' ? 'events' : 'lessons';
+
+  // Numeric max — lexicographic ORDER BY breaks after 999 (…-999 > …-1000 as strings)
+  const rows = db.query(`
+    SELECT id FROM ${table}
     WHERE id LIKE ?
-    ORDER BY id DESC
-    LIMIT 1
-  `).get(`${date}-%`);
-  
+  `).all(`${date}-%`);
+
   let seq = 1;
-  if (max) {
-    const parts = max.id.split('-');
-    seq = parseInt(parts[parts.length - 1]) + 1;
+  for (const row of rows) {
+    const suffix = row.id.slice(date.length + 1);
+    const n = parseInt(suffix, 10);
+    if (!Number.isNaN(n) && n >= seq) {
+      seq = n + 1;
+    }
   }
-  
+
   return `${date}-${String(seq).padStart(3, '0')}`;
 }

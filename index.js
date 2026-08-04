@@ -7,6 +7,7 @@ const { values, positionals } = parseArgs({
   options: {
     user: { type: 'string', short: 'u' },
     type: { type: 'string', short: 't' },
+    format: { type: 'string', short: 'f' },
     filters: { type: 'string' },
     limit: { type: 'string', short: 'l' },
     query: { type: 'string', short: 'q' },
@@ -42,7 +43,8 @@ try {
   switch (command) {
     case 'session': {
       const { getSession } = await import('./commands/session.js');
-      result = getSession(values.user);
+      const fmt = values.format || 'compact';
+      result = getSession(values.user, { format: fmt });
       break;
     }
       
@@ -142,7 +144,11 @@ try {
       process.exit(1);
   }
   
-  console.log(JSON.stringify(result, null, 2));
+  if (typeof result === 'string') {
+    console.log(result);
+  } else {
+    console.log(JSON.stringify(result, null, 2));
+  }
   
 } catch (error) {
   console.error(`Error: ${error.message}`);
@@ -157,7 +163,7 @@ Usage:
   agentmem <command> --user=<user_id> [options]
 
 Commands:
-  session                      Get full session context (state, hot events, principles, summary, lessons)
+  session                      Get session context (compact text default, --format=json for full)
   state [content]              Get or set agent state
   store --type=<type> <json>   Store memory (event, entity, lesson, principle, summary)
   recall --type=<type>         Recall memories with filters
@@ -167,7 +173,8 @@ Commands:
 Options:
   -u, --user <id>             Agent/user ID (required)
   -t, --type <type>           Memory type (events, entities, lessons, etc.)
-  -f, --filters <json>        Filter criteria as JSON
+  -f, --format <fmt>          Output format: compact (default) or json
+  --filters <json>            Filter criteria as JSON
   -l, --limit <n>             Limit results (default: 20)
   -q, --query <query>         Search query
   --types <list>              Comma-separated types for search/export
@@ -175,7 +182,8 @@ Options:
   --target <dir>              Export target directory
 
 Examples:
-  agentmem session --user=myagent
+  agentmem session --user=myagent                     # compact text (token-efficient)
+  agentmem session --user=myagent --format=json       # full JSON (backward compat)
   agentmem state --user=myagent
   agentmem state --user=myagent "## Focus\\nWorking on..."
   agentmem store --user=myagent --type=event '{"type":"work_session","title":"Did X","content":"..."}'
